@@ -80,7 +80,8 @@ class MainActivity : AppCompatActivity() {
         // Serializzazione e invio alla API
         val report = BucaReport(audioText, lat, lon)
         val retrofit = Retrofit.Builder()
-            .baseUrl("https://tuoserver.com/")
+            //.baseUrl("https://tuoserver.com/")
+            .baseUrl("http://192.168.1.10:3000")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
 
