@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="16dp">
+
+    <!-- Pulsante per la registrazione vocale -->
+    <Button
+        android:id="@+id/btnVoice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Avvia Riconoscimento Vocale"
+        android:padding="10dp"/>
+
+    <!-- Spazio tra i pulsanti -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="16dp"/>
+
+    <!-- Pulsante per avviare la registrazione -->
+    <Button
+        android:id="@+id/btnRecord"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Registra Audio"
+        android:padding="10dp"/>
+
+</LinearLayout>
