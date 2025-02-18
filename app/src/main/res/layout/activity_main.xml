@@ -28,4 +28,15 @@
         android:text="Registra Audio"
         android:padding="10dp"/>
 
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Posizione non ancora salvata"
+        android:textSize="16sp"
+        android:textColor="@android:color/black"
+        android:layout_marginTop="20dp"
+        android:layout_gravity="center"/>
+
+
 </LinearLayout>
