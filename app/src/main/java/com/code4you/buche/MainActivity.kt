@@ -1,10 +1,13 @@
 package com.code4you.buche
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.AsyncTask
 import android.os.Bundle
+import android.preference.PreferenceManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -17,18 +20,29 @@ import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import org.json.JSONObject
+import org.osmdroid.config.Configuration
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.*
 
+import org.osmdroid.views.MapView
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.overlay.Marker
+
 class MainActivity : AppCompatActivity() {
     private lateinit var speechRecognizer: SpeechRecognizer
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    //private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var isListening = false
     private lateinit var textView: TextView
     private val segnalazioni = mutableListOf<String>()
 
+    // OSM
+    private lateinit var map: MapView
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+
+    @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -45,6 +59,17 @@ class MainActivity : AppCompatActivity() {
             btnVoice.hide() // Nasconde il pulsante
             startListeningLoop()
         }
+
+        Configuration.getInstance().load(applicationContext, PreferenceManager.getDefaultSharedPreferences(applicationContext))
+        map = findViewById(R.id.map)
+        map.setTileSource(TileSourceFactory.MAPNIK)
+        map.setMultiTouchControls(true)
+
+        val mapController = map.controller
+        mapController.setZoom(18.0)
+
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        updateLocation()
     }
 
     private fun requestPermissions() {
@@ -161,5 +186,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun Button.hide() {
         this.post { this.visibility = android.view.View.GONE }
+    }
+
+    private fun updateLocation() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+            return
+        }
+
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+            location?.let {
+                val geoPoint = GeoPoint(it.latitude, it.longitude)
+                map.controller.setCenter(geoPoint)
+                map.controller.setZoom(18.0)
+                val marker = Marker(map)
+                marker.position = geoPoint
+                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                map.overlays.add(marker)
+                map.invalidate()
+            }
+        }
     }
 }

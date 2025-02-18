@@ -1,42 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="16dp">
+    tools:context=".MainActivity">
 
-    <!-- Pulsante per la registrazione vocale -->
+    <!-- Mappa OSM come sfondo -->
+    <org.osmdroid.views.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Bottone per il riconoscimento vocale -->
     <Button
         android:id="@+id/btnVoice"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Avvia Riconoscimento Vocale"
-        android:padding="10dp"/>
+        android:text="Riconoscimento Vocale"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:background="@android:color/holo_blue_dark"
+        android:textColor="@android:color/white"
+        android:padding="10dp"
+        android:layout_marginBottom="20dp" />
 
-    <!-- Spazio tra i pulsanti -->
-    <View
+    <!-- TextView per mostrare le coordinate salvate -->
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="16dp"/>
+        android:layout_height="200dp"
+        android:layout_alignParentTop="true"
+        android:layout_margin="10dp"
+        android:background="#AA000000">
 
-    <!-- Pulsante per avviare la registrazione -->
-    <Button
-        android:id="@+id/btnRecord"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Registra Audio"
-        android:padding="10dp"/>
-
-    <TextView
-        android:id="@+id/textView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Posizione non ancora salvata"
-        android:textSize="16sp"
-        android:textColor="@android:color/black"
-        android:layout_marginTop="20dp"
-        android:layout_gravity="center"/>
-
-
-</LinearLayout>
+        <TextView
+            android:id="@+id/textView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Posizioni Salvate:"
+            android:textColor="@android:color/white"
+            android:padding="10dp"
+            android:textSize="16sp" />
+    </ScrollView>
+</RelativeLayout>
