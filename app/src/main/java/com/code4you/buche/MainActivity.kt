@@ -5,7 +5,6 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
-import android.os.AsyncTask
 import android.os.Bundle
 import android.preference.PreferenceManager
 import android.speech.RecognitionListener
@@ -17,59 +16,44 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.*
 import org.json.JSONObject
 import org.osmdroid.config.Configuration
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.*
-
-import org.osmdroid.views.MapView
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
     private lateinit var speechRecognizer: SpeechRecognizer
-    //private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationRequest: LocationRequest
+    private lateinit var locationCallback: LocationCallback
     private var isListening = false
     private lateinit var textView: TextView
+    private lateinit var btnVoice: Button
     private val segnalazioni = mutableListOf<String>()
-
-    // OSM
     private lateinit var map: MapView
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
-    @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        requestPermissions()
-
-        textView = findViewById(R.id.textView)
-        val btnVoice = findViewById<Button>(R.id.btnVoice)
-
-        btnVoice.setOnClickListener {
-            btnVoice.hide() // Nasconde il pulsante
-            startListeningLoop()
-        }
-
         Configuration.getInstance().load(applicationContext, PreferenceManager.getDefaultSharedPreferences(applicationContext))
         map = findViewById(R.id.map)
-        map.setTileSource(TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(true)
 
-        val mapController = map.controller
-        mapController.setZoom(18.0)
+        textView = findViewById(R.id.textView)
+        btnVoice = findViewById(R.id.btnVoice)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        updateLocation()
+        requestPermissions()
+        setupLocationUpdates()
+
+        btnVoice.setOnClickListener {
+            btnVoice.hide()
+            startListeningLoop()
+        }
     }
 
     private fun requestPermissions() {
@@ -80,6 +64,49 @@ class MainActivity : AppCompatActivity() {
         ActivityCompat.requestPermissions(this, permissions, 200)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 200 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            startLocationUpdates()
+        } else {
+            Toast.makeText(this, "Permessi necessari non concessi", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setupLocationUpdates() {
+        locationRequest = LocationRequest.create().apply {
+            interval = 5000
+            fastestInterval = 2000
+            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+        }
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { updateMap(it) }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates() {
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null)
+    }
+
+    private fun updateMap(location: Location) {
+        val geoPoint = GeoPoint(location.latitude, location.longitude)
+        map.controller.setCenter(geoPoint)
+        map.controller.setZoom(18.0)
+
+        val marker = Marker(map).apply {
+            position = geoPoint
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            icon = resources.getDrawable(R.drawable.blue_marker, null)
+        }
+        map.overlays.clear()
+        map.overlays.add(marker)
+        map.invalidate()
+    }
+
     private fun startListeningLoop() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -88,19 +115,15 @@ class MainActivity : AppCompatActivity() {
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Dì 'Buca' per segnalare o 'Chiudi buca' per chiudere")
         }
 
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                matches?.let {
-                    Log.d("RICONOSCIMENTO", "Parole riconosciute: $it")
-                    processCommand(it)
-                }
-                startListeningLoop() // Continua ad ascoltare
+                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.let { processCommand(it) }
+                startListeningLoop()
             }
 
             override fun onError(error: Int) {
-                Log.e("RICONOSCIMENTO", "Errore riconoscimento: $error")
-                startListeningLoop() // Riavvia ascolto
+                startListeningLoop()
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -117,13 +140,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun processCommand(commands: List<String>) {
         for (command in commands) {
-            val lowerCommand = command.lowercase(Locale.ROOT)
             when {
-                lowerCommand.contains("buca") -> {
+                command.contains("buca", ignoreCase = true) -> {
                     saveBucaLocation()
                     return
                 }
-                lowerCommand.contains("chiudi buca") -> {
+                command.contains("chiudi buca", ignoreCase = true) -> {
                     closeApp()
                     return
                 }
@@ -140,8 +162,16 @@ class MainActivity : AppCompatActivity() {
                     val segnalazione = "Buca: $latitude, $longitude"
                     segnalazioni.add(segnalazione)
                     textView.text = segnalazioni.joinToString("\n")
+
+                    val marker = Marker(map).apply {
+                        position = GeoPoint(latitude, longitude)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        icon = resources.getDrawable(R.drawable.red_marker, null)
+                    }
+                    map.overlays.add(marker)
+                    map.invalidate()
+
                     Toast.makeText(this, "Buca segnalata!", Toast.LENGTH_SHORT).show()
-                    SendLocationTask(latitude, longitude).execute()
                 }
             }
         }
@@ -150,61 +180,10 @@ class MainActivity : AppCompatActivity() {
     private fun closeApp() {
         textView.text = "Segnalazioni registrate:\n" + segnalazioni.joinToString("\n")
         Toast.makeText(this, "Chiusura dell'app...", Toast.LENGTH_SHORT).show()
-        finishAffinity() // Chiude l'app
-    }
-
-    private class SendLocationTask(private val latitude: Double, private val longitude: Double) : AsyncTask<Void, Void, String>() {
-        override fun doInBackground(vararg params: Void?): String {
-            val url = URL("http://192.168.1.1:3000/receiveLocation")
-            val jsonParam = JSONObject().apply {
-                put("latitude", latitude)
-                put("longitude", longitude)
-            }
-
-            return try {
-                with(url.openConnection() as HttpURLConnection) {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json")
-                    doOutput = true
-                    OutputStreamWriter(outputStream).use { it.write(jsonParam.toString()) }
-
-                    if (responseCode == HttpURLConnection.HTTP_OK) {
-                        "Posizione inviata con successo!"
-                    } else {
-                        "Errore nell'invio della posizione."
-                    }
-                }
-            } catch (e: Exception) {
-                "Errore: ${e.message}"
-            }
-        }
-
-        override fun onPostExecute(result: String?) {
-            super.onPostExecute(result)
-        }
+        finishAffinity()
     }
 
     private fun Button.hide() {
         this.post { this.visibility = android.view.View.GONE }
-    }
-
-    private fun updateLocation() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
-            return
-        }
-
-        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-            location?.let {
-                val geoPoint = GeoPoint(it.latitude, it.longitude)
-                map.controller.setCenter(geoPoint)
-                map.controller.setZoom(18.0)
-                val marker = Marker(map)
-                marker.position = geoPoint
-                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                map.overlays.add(marker)
-                map.invalidate()
-            }
-        }
     }
 }
