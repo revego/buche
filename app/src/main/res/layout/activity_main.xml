@@ -5,9 +5,8 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <!-- Mappa OSM come sfondo -->
-    <org.osmdroid.views.MapView
-        android:id="@+id/map"
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
