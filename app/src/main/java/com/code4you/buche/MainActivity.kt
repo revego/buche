@@ -66,6 +66,15 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(map: MapLibreMap) {
         maplibreMap = map
 
+        // Impostare i limiti di zoom
+        maplibreMap.setMinZoomPreference(10.0) // zoom minimo consentito
+        maplibreMap.setMaxZoomPreference(15.0) // zoom massimo consentito
+
+        // Impostare zoom con animazione
+        maplibreMap.animateCamera(
+            CameraUpdateFactory.zoomTo(15.0)
+        )
+
         // Opzione 2: Maptiler streets (richiede API key gratuita)
         maplibreMap.setStyle(
             Style.Builder().fromUri("https://api.maptiler.com/maps/basic/style.json?key=PgttgVZBnbVXdswBdDvh")
@@ -134,7 +143,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Dì 'Buca' per segnalare o 'Chiudi buca' per chiudere")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Dì 'Buca' per segnalare o 'Chiudi' per terminare")
         }
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
