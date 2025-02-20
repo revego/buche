@@ -65,6 +65,7 @@ dependencies {
 
     // MapLibre
     implementation(libs.android.sdk)
+    implementation("org.maplibre.gl:android-sdk:9.5.2") // Versione più recente di MapLibre
 
 
 }
