@@ -4,6 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.location.Location
 import android.os.Bundle
 import android.os.Handler
@@ -17,8 +21,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.location.*
+import com.google.gson.GsonBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.OnMapReadyCallback
@@ -26,6 +36,15 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.Style
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
+import retrofit2.http.Query
+import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -43,6 +62,36 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val EMAIL_RECIPIENT = "marco.giardina@etik.com" // Cambia con l'email desiderata
     private val coordinateList = mutableListOf<Pair<Double, Double>>()
+    private val bucheRepository = BucheRepository()
+    private val bucheMarkers = mutableListOf<LatLng>()
+
+    // Data class per rappresentare una buca
+    data class Buca(
+        val id: Long? = null,
+        val latitude: Double,
+        val longitude: Double,
+        val timestamp: String,
+        val status: String = "ACTIVE"  // ACTIVE, FIXED, etc.
+    )
+
+    // Interface per le chiamate API
+    interface BucheApiService {
+        @GET("buche")
+        suspend fun getAllBuche(): List<Buca>
+
+        @POST("buche")
+        suspend fun segnalaBuca(@Body buca: Buca): Buca
+
+        @PUT("buche/{id}")
+        suspend fun updateBuca(@Path("id") id: Long, @Body buca: Buca): Buca
+
+        @GET("buche/nearby")
+        suspend fun getNearbyBuche(
+            @Query("lat") latitude: Double,
+            @Query("lon") longitude: Double,
+            @Query("radius") radiusInMeters: Int = 1000
+        ): List<Buca>
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +116,51 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnVoice.setOnClickListener {
             btnVoice.hide()
             startListeningLoop()
+        }
+    }
+
+    // Classe per gestire l'istanza di Retrofit
+    object RetrofitClient {
+        private const val BASE_URL = "https://your-api-endpoint.com/api/"
+
+        private val gson = GsonBuilder()
+            .setDateFormat("yyyy-MM-dd'T'HH:mm:ss")
+            .create()
+
+        private val retrofit = Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+
+        val bucheApiService: BucheApiService = retrofit.create(BucheApiService::class.java)
+    }
+
+    // Repository per gestire le operazioni sulle buche
+    class BucheRepository {
+        private val apiService = RetrofitClient.bucheApiService
+
+        suspend fun segnalaBuca(latitude: Double, longitude: Double) {
+            val buca = Buca(
+                latitude = latitude,
+                longitude = longitude,
+                timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                    .format(Date())
+            )
+
+            try {
+                val response = apiService.segnalaBuca(buca)
+                // Gestione della risposta
+            } catch (e: Exception) {
+                // Gestione degli errori
+            }
+        }
+
+        suspend fun getNearbyBuche(latitude: Double, longitude: Double): List<Buca> {
+            return try {
+                apiService.getNearbyBuche(latitude, longitude)
+            } catch (e: Exception) {
+                emptyList()
+            }
         }
     }
 
@@ -218,6 +312,45 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     // Salva le coordinate nella lista
                     coordinateList.add(Pair(latitude, longitude))
 
+                    //val segnalazione = "Buca: $latitude, $longitude"
+                    //segnalazioni.add(segnalazione)
+                    //textView.text = segnalazioni.joinToString("\n")
+
+                    // Lancia una coroutine per salvare la buca
+                    lifecycleScope.launch {
+                        try {
+                            bucheRepository.segnalaBuca(latitude, longitude)
+
+                            // Aggiorna UI e mappa
+                            withContext(Dispatchers.Main) {
+                                updateUIWithNewBuca(latitude, longitude)
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Errore nel salvataggio: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun saveBucaLocation_() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    val latitude = location.latitude
+                    val longitude = location.longitude
+                    val position = LatLng(latitude, longitude)
+
+                    // Salva le coordinate nella lista
+                    coordinateList.add(Pair(latitude, longitude))
+
                     val segnalazione = "Buca: $latitude, $longitude"
                     segnalazioni.add(segnalazione)
                     textView.text = segnalazioni.joinToString("\n")
@@ -233,6 +366,59 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
         }
+    }
+
+    private fun updateUIWithNewBuca(latitude: Double, longitude: Double) {
+        val position = LatLng(latitude, longitude)
+        bucheMarkers.add(position)
+
+        val segnalazione = "Buca: $latitude, $longitude"
+        segnalazioni.add(segnalazione)
+        textView.text = segnalazioni.joinToString("\n")
+
+        updateAllMarkers()
+        Toast.makeText(this, "Buca segnalata!", Toast.LENGTH_SHORT).show()
+    }
+
+    // Nuova funzione per aggiornare tutti i marker
+    private fun updateAllMarkers() {
+        // Pulisci la mappa
+        maplibreMap.clear()
+
+        // Ricrea il marker della posizione corrente (blu)
+        val currentLocation = maplibreMap.cameraPosition.target
+        maplibreMap.addMarker(
+            MarkerOptions()
+                .position(currentLocation)
+                .icon(IconFactory.getInstance(this).fromResource(R.drawable.blue_marker))
+        )
+
+        // Ricrea tutti i marker delle buche (punti neri)
+        bucheMarkers.forEach { position ->
+            createSmallBlackDot(position)
+        }
+    }
+
+    private fun createSmallBlackDot(position: LatLng) {
+        // Crea un piccolo punto nero programmaticamente
+        val size = 20 // dimensione in pixel
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(size/2f, size/2f, size/2f, paint)
+
+        // Crea l'icona dal bitmap
+        val icon = IconFactory.getInstance(this).fromBitmap(bitmap)
+
+        // Aggiungi il marker
+        maplibreMap.addMarker(
+            MarkerOptions()
+                .position(position)
+                .icon(icon)
+        )
     }
 
     // Nuova funzione per preparare e inviare l'email
