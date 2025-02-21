@@ -4,10 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.location.Location
 import android.os.Bundle
 import android.os.Handler
@@ -22,9 +18,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
-import com.google.android.gms.maps.model.CircleOptions
 import org.maplibre.android.MapLibre
-import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.OnMapReadyCallback
@@ -228,9 +222,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     segnalazioni.add(segnalazione)
                     textView.text = segnalazioni.joinToString("\n")
 
-                    // Aggiungi il punto nero sulla mappa
-                    createSmallBlackDot(position)
-
                     // Aggiungi un marker per la buca
                     maplibreMap.addMarker(
                         MarkerOptions()
@@ -242,29 +233,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
         }
-    }
-
-    // Aggiungi questa funzione per creare un piccolo marker nero
-    private fun createSmallBlackDot(position: LatLng) {
-        // Crea un piccolo punto nero programmaticamente
-        val size = 20 // dimensione in pixel
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val paint = Paint().apply {
-            color = Color.BLACK
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(size/2f, size/2f, size/2f, paint)
-
-        // Crea l'icona dal bitmap
-        val icon = IconFactory.getInstance(this).fromBitmap(bitmap)
-
-        // Aggiungi il marker
-        maplibreMap.addMarker(
-            MarkerOptions()
-                .position(position)
-                .icon(icon)
-        )
     }
 
     // Nuova funzione per preparare e inviare l'email
