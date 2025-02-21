@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val EMAIL_RECIPIENT = "marco.giardina@etik.com" // Cambia con l'email desiderata
     private val coordinateList = mutableListOf<Pair<Double, Double>>()
+    // Aggiungi questa proprietà per tenere traccia dei marker delle buche
+    private val bucheMarkers = mutableListOf<LatLng>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,13 +144,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             maplibreMap.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(latLng, 18.0))
         }
 
+        // Invece di solo clear() e addMarker(), usa updateAllMarkers()
+        updateAllMarkers()
+
         // Aggiungi un marker per la posizione corrente
-        maplibreMap.clear()
-        maplibreMap.addMarker(
-            MarkerOptions()
-                .position(latLng)
-                .icon(org.maplibre.android.annotations.IconFactory.getInstance(this).fromResource(R.drawable.blue_marker))
-        )
+        //maplibreMap.clear()
+        //maplibreMap.addMarker(
+        //    MarkerOptions()
+        //        .position(latLng)
+        //        .icon(org.maplibre.android.annotations.IconFactory.getInstance(this).fromResource(R.drawable.blue_marker))
+        //)
     }
 
     private fun startListeningLoop() {
@@ -221,6 +226,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     val longitude = location.longitude
                     val position = LatLng(latitude, longitude)
 
+                    // Salva la posizione nella lista dei marker
+                    bucheMarkers.add(position)
+
                     // Salva le coordinate nella lista
                     coordinateList.add(Pair(latitude, longitude))
 
@@ -228,8 +236,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     segnalazioni.add(segnalazione)
                     textView.text = segnalazioni.joinToString("\n")
 
+                    // Aggiorna tutti i marker
+                    updateAllMarkers()
+
                     // Aggiungi il punto nero sulla mappa
-                    createSmallBlackDot(position)
+                    //createSmallBlackDot(position)
 
                     // Aggiungi un marker per la buca
                     maplibreMap.addMarker(
@@ -241,6 +252,25 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     Toast.makeText(this, "Buca segnalata!", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    // Nuova funzione per aggiornare tutti i marker
+    private fun updateAllMarkers() {
+        // Pulisci la mappa
+        maplibreMap.clear()
+
+        // Ricrea il marker della posizione corrente (blu)
+        val currentLocation = maplibreMap.cameraPosition.target
+        maplibreMap.addMarker(
+            MarkerOptions()
+                .position(currentLocation)
+                .icon(IconFactory.getInstance(this).fromResource(R.drawable.blue_marker))
+        )
+
+        // Ricrea tutti i marker delle buche (punti neri)
+        bucheMarkers.forEach { position ->
+            createSmallBlackDot(position)
         }
     }
 
@@ -330,6 +360,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Pulisci le liste
         coordinateList.clear()
         segnalazioni.clear()
+        bucheMarkers.clear() // Pulisci anche la lista dei marker
 
         // Pulisci la textView
         textView.text = ""
