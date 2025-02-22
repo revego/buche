@@ -5,11 +5,12 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <!-- Mappa OSM come sfondo -->
-    <org.osmdroid.views.MapView
-        android:id="@+id/map"
+    <!-- MapView di MapLibre -->
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/mapView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:layout_above="@id/btnVoice" /> <!-- Posiziona la mappa sopra il pulsante -->
 
     <!-- Bottone per il riconoscimento vocale -->
     <Button
@@ -31,6 +32,7 @@
         android:layout_alignParentTop="true"
         android:layout_margin="10dp"
         android:background="#AA000000">
+
 
         <TextView
             android:id="@+id/textView"

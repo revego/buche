@@ -1,6 +1,10 @@
+//fun kapt(s: String) {
+//}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    id("kotlin-kapt")  // Aggiungi questa riga
 }
 
 android {
@@ -36,6 +40,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    kapt {
+        correctErrorTypes = true
+        arguments {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
 }
 
 dependencies {
@@ -48,23 +59,37 @@ dependencies {
     implementation(libs.androidx.navigation.ui.ktx)
     implementation(libs.play.services.location)
     implementation(libs.androidx.ui.text.android)
+    implementation(libs.androidx.room.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.10.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.10.0")
+    implementation(libs.squareup.retrofit)
+    implementation(libs.retrofit2.converter.gson)
+    implementation(libs.okhttp)
+    implementation(libs.logging.interceptor)
 
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation(libs.squareup.retrofit)
+    implementation(libs.retrofit2.converter.gson)
     // G
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation(libs.play.services.maps)
+    implementation(libs.play.services.location.v2101)
 
-    // OSM
-    implementation("org.osmdroid:osmdroid-android:6.1.16")
+    // MapLibre
+    implementation(libs.android.sdk)
+    implementation("org.maplibre.gl:android-sdk:9.5.2") // Versione più recente di MapLibre
+
+    implementation("com.github.bumptech.glide:glide:4.12.0")
+    annotationProcessor("com.github.bumptech.glide:compiler:4.12.0")
+
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
+
+    // Se non li hai già
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
 
 }
