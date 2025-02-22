@@ -1,8 +1,10 @@
 package com.code4you.buche
 
+import BucaSegnalazione
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -10,6 +12,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.net.Uri
 import android.os.Bundle
@@ -28,8 +34,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.room.Room
 import com.bumptech.glide.Glide
 import com.google.android.gms.location.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.maps.MapView
@@ -42,8 +52,8 @@ import org.maplibre.android.maps.Style
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-// Modifica l'import del Marker
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -64,12 +74,50 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val markerCoordinatesMap = mutableMapOf<org.maplibre.android.annotations.Marker, Pair<Double, Double>>()
     private var currentPopupWindow: PopupWindow? = null
+    // Sensor
+    private lateinit var sensorManager: SensorManager
+    private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
+
+    // Soglie per il rilevamento
+    private val ACCELERATION_THRESHOLD = 15f // m/s²
+    private val GYROSCOPE_THRESHOLD = 3f // rad/s
+    private val DETECTION_COOLDOWN = 2000L // 2 secondi tra le rilevazioni
+    private var lastDetectionTime = 0L
+
+    // Buffer per i valori dei sensori
+    private val accelerometerReadings = FloatArray(3)
+    private val gyroscopeReadings = FloatArray(3)
+
+    // Database per le segnalazioni
+    private lateinit var database: AppDatabase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Inizializza MapLibre
         MapLibre.getInstance(this)
+
+        // Inizializza il database
+        //database = AppDatabase.getDatabase(this)
+
+        // Inizializza il database
+        database = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "dissesti_db"
+        ).build()
+
+        // Inizializza i sensori
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+        // Verifica se i sensori sono disponibili
+        if (accelerometer == null || gyroscope == null) {
+            Toast.makeText(this, "Sensori necessari non disponibili su questo dispositivo",
+                Toast.LENGTH_LONG).show()
+        }
 
         setContentView(R.layout.activity_main)
 
@@ -405,14 +453,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // Invece di solo clear() e addMarker(), usa updateAllMarkers()
         updateAllMarkers()
-
-        // Aggiungi un marker per la posizione corrente
-        //maplibreMap.clear()
-        //maplibreMap.addMarker(
-        //    MarkerOptions()
-        //        .position(latLng)
-        //        .icon(org.maplibre.android.annotations.IconFactory.getInstance(this).fromResource(R.drawable.blue_marker))
-        //)
     }
 
     private fun startListeningLoop() {
@@ -701,6 +741,80 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         Toast.makeText(this, "App resettata", Toast.LENGTH_SHORT).show()
     }
 
+    private fun detectPotentialBuca() {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastDetectionTime < DETECTION_COOLDOWN) {
+            return // Evita rilevazioni troppo frequenti
+        }
+
+        // Calcola la magnitudo dell'accelerazione
+        val acceleration = sqrt(
+            accelerometerReadings[0] * accelerometerReadings[0] +
+                    accelerometerReadings[1] * accelerometerReadings[1] +
+                    accelerometerReadings[2] * accelerometerReadings[2]
+        )
+
+        // Calcola la magnitudo della rotazione
+        val rotation = sqrt(
+            gyroscopeReadings[0] * gyroscopeReadings[0] +
+                    gyroscopeReadings[1] * gyroscopeReadings[1] +
+                    gyroscopeReadings[2] * gyroscopeReadings[2]
+        )
+
+        // Se entrambi i valori superano le soglie, potrebbe essere una buca
+        if (abs(acceleration - SensorManager.GRAVITY_EARTH) > ACCELERATION_THRESHOLD
+            && rotation > GYROSCOPE_THRESHOLD) {
+            lastDetectionTime = currentTime
+            handleBucaDetection()
+        }
+    }
+
+    private fun handleBucaDetection() {
+        if (ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                location?.let {
+                    val bucaSegnalazione = BucaSegnalazione(
+                        latitude = it.latitude,
+                        longitude = it.longitude,
+                        timestamp = System.currentTimeMillis(),
+                        accelerationMagnitude = sqrt(
+                            accelerometerReadings[0] * accelerometerReadings[0] +
+                                    accelerometerReadings[1] * accelerometerReadings[1] +
+                                    accelerometerReadings[2] * accelerometerReadings[2]
+                        ),
+                        rotationMagnitude = sqrt(
+                            gyroscopeReadings[0] * gyroscopeReadings[0] +
+                                    gyroscopeReadings[1] * gyroscopeReadings[1] +
+                                    gyroscopeReadings[2] * gyroscopeReadings[2]
+                        )
+                    )
+
+                    // Salva la segnalazione nel database
+                    lifecycleScope.launch(Dispatchers.IO) {
+                       //database.bucaDao().insert(bucaSegnalazione)
+                    }
+
+                    // Aggiorna la UI
+                    runOnUiThread {
+                        val position = LatLng(it.latitude, it.longitude)
+                        bucheMarkers.add(position)
+                        coordinateList.add(Pair(it.latitude, it.longitude))
+                        updateAllMarkers()
+
+                        val segnalazione = "Buca rilevata automaticamente: ${it.latitude}, ${it.longitude}"
+                        segnalazioni.add(segnalazione)
+                        textView.text = segnalazioni.joinToString("\n")
+
+                        Toast.makeText(this, "Buca rilevata automaticamente!",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
     private fun closeApp_() {
         textView.text = "Segnalazioni registrate:\n" + segnalazioni.joinToString("\n")
         Toast.makeText(this, "Chiusura dell'app...", Toast.LENGTH_SHORT).show()
@@ -719,11 +833,62 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onResume() {
         super.onResume()
         mapView.onResume()
+
+        // Registra i listener dei sensori con gestione corretta della nullabilità
+        accelerometer?.let { accelerometerSensor ->
+            sensorManager.registerListener(
+                this as SensorEventListener,            // Cast esplicito a SensorEventListener
+                accelerometerSensor,                    // Sensor non-null
+                SensorManager.SENSOR_DELAY_NORMAL       // int rate
+            )
+        }
+
+        gyroscope?.let { gyroscopeSensor ->
+            sensorManager.registerListener(
+                this as SensorEventListener,            // Cast esplicito a SensorEventListener
+                gyroscopeSensor,                        // Sensor non-null
+                SensorManager.SENSOR_DELAY_NORMAL       // int rate
+            )
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        mapView.onPause()
+
+        // Rimuovi i listener con lo stesso cast
+        sensorManager.unregisterListener(this as SensorEventListener)
+        //mapView.onPause()
+    }
+
+    fun onSensorChanged(event: SensorEvent) {
+        when (event.sensor.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                // Copia i valori dell'accelerometro
+                System.arraycopy(event.values, 0, accelerometerReadings, 0, 3)
+                detectPotentialBuca()
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                System.arraycopy(event.values, 0, gyroscopeReadings, 0, 3)
+            }
+        }
+    }
+
+    fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Puoi implementare qui la logica per gestire i cambiamenti di accuratezza del sensore
+        when (accuracy) {
+            SensorManager.SENSOR_STATUS_ACCURACY_HIGH -> {
+                Log.d("Sensor", "Alta accuratezza")
+            }
+            SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM -> {
+                Log.d("Sensor", "Media accuratezza")
+            }
+            SensorManager.SENSOR_STATUS_ACCURACY_LOW -> {
+                Log.d("Sensor", "Bassa accuratezza")
+            }
+            SensorManager.SENSOR_STATUS_UNRELIABLE -> {
+                Log.d("Sensor", "Accuratezza inaffidabile")
+            }
+        }
     }
 
     override fun onStop() {

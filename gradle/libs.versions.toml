@@ -18,6 +18,7 @@ playServicesLocation = "21.3.0"
 playServicesLocationVersion = "21.0.1"
 playServicesMaps = "19.0.0"
 uiTextAndroid = "1.7.7"
+roomKtx = "2.6.1"
 
 [libraries]
 android-sdk = { module = "org.maplibre.gl:android-sdk", version.ref = "androidSdk" }
@@ -39,6 +40,7 @@ play-services-location-v2101 = { module = "com.google.android.gms:play-services-
 play-services-maps = { module = "com.google.android.gms:play-services-maps", version.ref = "playServicesMaps" }
 retrofit2-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "converterGsonVersion" }
 squareup-retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "converterGsonVersion" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "roomKtx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
