@@ -67,5 +67,8 @@ dependencies {
     implementation(libs.android.sdk)
     implementation("org.maplibre.gl:android-sdk:9.5.2") // Versione più recente di MapLibre
 
+    implementation("com.github.bumptech.glide:glide:4.12.0")
+    annotationProcessor("com.github.bumptech.glide:compiler:4.12.0")
+
 
 }

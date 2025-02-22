@@ -2,6 +2,7 @@ package com.code4you.buche
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -16,7 +17,10 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.view.Gravity
 import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -25,6 +29,7 @@ import com.google.android.gms.location.*
 import com.google.android.gms.maps.model.CircleOptions
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
+import org.maplibre.android.annotations.Marker
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.OnMapReadyCallback
@@ -35,7 +40,16 @@ import org.maplibre.android.maps.Style
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+
+import android.graphics.drawable.GradientDrawable
+
+import com.bumptech.glide.Glide
+import android.net.Uri
+import android.widget.ImageView
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity<LayoutInflater> : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationRequest: LocationRequest
@@ -51,6 +65,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val coordinateList = mutableListOf<Pair<Double, Double>>()
     // Aggiungi questa proprietà per tenere traccia dei marker delle buche
     private val bucheMarkers = mutableListOf<LatLng>()
+
+    // Aggiungi una mappa per tenere traccia delle coordinate associate a ciascun marker
+    private val markerCoordinatesMap = mutableMapOf<Marker, Pair<Double, Double>>()
+    private var currentPopupWindow: PopupWindow? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,9 +115,422 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // La mappa è pronta e lo stile è stato caricato
         }
 
+        // Aggiungi il listener per i click sui marker
+        maplibreMap.setOnMarkerClickListener { marker ->
+            showMarkerInfo(marker)
+            true
+        }
+
         // Imposta una posizione iniziale (ad esempio, Roma)
         val initialPosition = LatLng(41.9028, 12.4964)
         maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(initialPosition, 10.0))
+    }
+
+    private fun showMarkerInfo(marker: Marker) {
+        // Chiudi popup precedente se esiste
+        currentPopupWindow?.dismiss()
+
+        // Ottieni le coordinate associate al marker
+        val coordinates = markerCoordinatesMap[marker] ?: return
+
+        // Crea il container principale
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Crea un ImageView per l'immagine di Street View
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                600,  // larghezza aumentata per una migliore visibilità
+                400   // altezza aumentata per una migliore visibilità
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        }
+
+        // Crea l'URL di Street View
+        val streetViewUrl = "https://maps.googleapis.com/maps/api/streetview?" +
+                "size=600x400&" +
+                "location=${coordinates.first},${coordinates.second}&" +
+                "key=YOUR_GOOGLE_API_KEY"  // Sostituisci con la tua API key
+
+        // Carica immediatamente l'immagine di Street View
+        Glide.with(this)
+            .load(streetViewUrl)
+            .placeholder(R.drawable.street_view_placeholder)
+            .error(R.drawable.street_view_placeholder)
+            .timeout(6000)
+            .into(imageView)
+
+        // Crea la TextView per le coordinate
+        val infoText = TextView(this).apply {
+            text = "Coordinate:\nLat: ${formatCoordinate(coordinates.first)}\nLong: ${formatCoordinate(coordinates.second)}"
+            setTextColor(Color.BLACK)
+            textSize = 14f
+            setPadding(0, 8, 0, 8)
+        }
+
+        // Aggiungi un bottone per aprire Street View
+        val openStreetViewButton = Button(this).apply {
+            text = "Apri in Street View"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                val gmmIntentUri = Uri.parse("google.streetview:cbll=${coordinates.first},${coordinates.second}")
+                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+                mapIntent.setPackage("com.google.android.apps.maps")
+                try {
+                    startActivity(mapIntent)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Google Maps non installato", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // Aggiungi le view al container
+        with(popupView) {
+            addView(imageView)
+            addView(infoText)
+            addView(openStreetViewButton)
+        }
+
+        // Styling del container
+        popupView.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            setStroke(2, Color.GRAY)
+            cornerRadius = 8f
+        }
+
+        // Crea e configura il PopupWindow
+        val popupWindow = PopupWindow(
+            popupView,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = 10f
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = 8f
+            })
+            // Permetti di chiudere il popup toccando fuori
+            isOutsideTouchable = true
+            isFocusable = true
+        }
+
+        // Calcola la posizione del popup
+        val location = IntArray(2)
+        marker.position.let {
+            val point = maplibreMap.projection.toScreenLocation(it)
+            location[0] = point.x.toInt()
+            location[1] = point.y.toInt()
+        }
+
+        // Salva il riferimento al popup corrente
+        currentPopupWindow = popupWindow
+
+        // Animazione fade in
+        popupView.alpha = 0f
+        popupView.animate().alpha(1f).setDuration(200).start()
+
+        // Mostra il popup
+        popupWindow.showAtLocation(
+            mapView,
+            Gravity.NO_GRAVITY,
+            location[0] - (600 / 2),  // Centra rispetto alla larghezza dell'immagine
+            location[1] - 550  // Posiziona sopra il marker con spazio extra per l'immagine
+        )
+
+        // Listener per la chiusura
+        popupWindow.setOnDismissListener {
+            currentPopupWindow = null
+        }
+    }
+
+    private fun showMarkerInfo2(marker: Marker) {
+        // Chiudi popup precedente se esiste
+        currentPopupWindow?.dismiss()
+
+        // Ottieni le coordinate associate al marker
+        val coordinates = markerCoordinatesMap[marker] ?: return
+
+        // Crea il container principale
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Crea un ImageView per l'immagine di Street View
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                600,  // larghezza aumentata per una migliore visibilità
+                400   // altezza aumentata per una migliore visibilità
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        }
+
+        // Crea l'URL di Street View
+        val streetViewUrl = "https://maps.googleapis.com/maps/api/streetview?" +
+                "size=600x400&" +
+                "location=${coordinates.first},${coordinates.second}&" +
+                "key=YOUR_GOOGLE_API_KEY"  // Sostituisci con la tua API key
+
+        // Nella funzione showMarkerInfo
+        isStreetViewAvailable(coordinates.first, coordinates.second) { available ->
+            if (available) {
+                val streetViewUrl = "https://maps.googleapis.com/maps/api/streetview?" +
+                        "size=600x400&" +
+                        "location=${coordinates.first},${coordinates.second}&" +
+                        "key=YOUR_GOOGLE_API_KEY"
+
+                Glide.with(this)
+                    .load(streetViewUrl)
+                    .placeholder(R.drawable.street_view_placeholder)
+                    .error(R.drawable.street_view_placeholder)
+                    .timeout(6000)
+                    .into(imageView)
+            } else {
+                imageView.setImageResource(R.drawable.street_view_placeholder)
+            }
+        }
+
+        // Modifica la funzione showMarkerInfo per gestire meglio il placeholder
+        //Glide.with(this)
+        //    .load(streetViewUrl)
+        //    .placeholder(R.drawable.street_view_placeholder)  // usa il placeholder durante il caricamento
+        //    .error(R.drawable.street_view_placeholder)       // usa lo stesso placeholder in caso di errore
+        //    .timeout(6000)  // timeout dopo 6 secondi
+        //    .into(imageView)
+
+        // Carica l'immagine usando Glide
+        //Glide.with(this)
+        //    .load(streetViewUrl)
+        //    .placeholder(R.drawable.street_view_placeholder)
+        //    .error(R.drawable.street_view_placeholder)
+        //    .into(imageView)
+
+        // Crea la TextView per le coordinate
+        val infoText = TextView(this).apply {
+            text = "Coordinate:\nLat: ${formatCoordinate(coordinates.first)}\nLong: ${formatCoordinate(coordinates.second)}"
+            setTextColor(Color.BLACK)
+            textSize = 14f
+            setPadding(0, 8, 0, 8)
+        }
+
+        // Aggiungi un bottone per aprire Street View
+        val openStreetViewButton = Button(this).apply {
+            text = "Apri in Street View"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                val gmmIntentUri = Uri.parse("google.streetview:cbll=${coordinates.first},${coordinates.second}")
+                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+                mapIntent.setPackage("com.google.android.apps.maps")
+                try {
+                    startActivity(mapIntent)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Google Maps non installato", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // Aggiungi le view al container
+        with(popupView) {
+            addView(imageView)
+            addView(infoText)
+            addView(openStreetViewButton)
+        }
+
+        // Styling del container
+        popupView.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            setStroke(2, Color.GRAY)
+            cornerRadius = 8f
+            // Aggiungi un'ombra
+            //elevation = 8f
+        }
+
+        // Crea e configura il PopupWindow
+        val popupWindow = PopupWindow(
+            popupView,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = 10f
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = 8f
+            })
+            // Permetti di chiudere il popup toccando fuori
+            isOutsideTouchable = true
+            isFocusable = true
+        }
+
+        // Calcola la posizione del popup
+        val location = IntArray(2)
+        marker.position.let {
+            val point = maplibreMap.projection.toScreenLocation(it)
+            location[0] = point.x.toInt()
+            location[1] = point.y.toInt()
+        }
+
+        // Salva il riferimento al popup corrente
+        currentPopupWindow = popupWindow
+
+        // Animazione fade in
+        popupView.alpha = 0f
+        popupView.animate().alpha(1f).setDuration(200).start()
+
+        // Mostra il popup
+        popupWindow.showAtLocation(
+            mapView,
+            Gravity.NO_GRAVITY,
+            location[0] - (600 / 2),  // Centra rispetto alla larghezza dell'immagine
+            location[1] - 550  // Posiziona sopra il marker con spazio extra per l'immagine
+        )
+
+        // Listener per la chiusura
+        popupWindow.setOnDismissListener {
+            currentPopupWindow = null
+        }
+    }
+
+    private fun isStreetViewAvailable(lat: Double, lng: Double, callback: (Boolean) -> Unit) {
+        val metadata = "https://maps.googleapis.com/maps/api/streetview/metadata?" +
+                "location=${lat},${lng}&" +
+                "key=YOUR_GOOGLE_API_KEY"
+
+        // Usa una coroutine o AsyncTask per controllare la disponibilità
+        Thread {
+            try {
+                val url = URL(metadata)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                val response = connection.responseCode
+                val status = connection.inputStream.bufferedReader().use { it.readText() }
+
+                // Esegui il callback sul thread principale
+                Handler(Looper.getMainLooper()).post {
+                    callback(status.contains("\"status\" : \"OK\""))
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    callback(false)
+                }
+            }
+        }.start()
+    }
+
+    // Funzione per aprire Street View nell'app di Google Maps
+    private fun openInGoogleStreetView(lat: Double, lng: Double) {
+        val gmmIntentUri = Uri.parse("google.streetview:cbll=$lat,$lng")
+        val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+        mapIntent.setPackage("com.google.android.apps.maps")
+
+        try {
+            startActivity(mapIntent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(
+                this,
+                "Google Maps non installato",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun showMarkerInfo_(marker: Marker) {
+        // Chiudi popup precedente se esiste
+        currentPopupWindow?.dismiss()
+
+        // Ottieni le coordinate associate al marker
+        val coordinates = markerCoordinatesMap[marker] ?: return
+
+        // Crea un LinearLayout come container principale
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 16, 32, 16)
+            setBackgroundColor(Color.WHITE)
+        }
+
+        // Crea una TextView per mostrare le coordinate
+        val infoText = TextView(this).apply {
+            text = "Lat: ${formatCoordinate(coordinates.first)}\nLong: ${formatCoordinate(coordinates.second)}"
+            setTextColor(Color.BLACK)
+            textSize = 14f
+            setPadding(0, 0, 0, 0)
+        }
+
+        // Aggiungi la TextView al LinearLayout
+        popupView.addView(infoText)
+
+        // Aggiungi un bordo al popup
+        popupView.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            setStroke(2, Color.GRAY)
+            cornerRadius = 8f
+        }
+
+        // Crea e configura il PopupWindow
+        val popupWindow = PopupWindow(
+            popupView,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = 10f
+            // Ombreggiatura leggera
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = 8f
+            })
+        }
+
+        // Mostra il popup sopra il marker
+        val location = IntArray(2)
+        marker.position.let {
+            val point = maplibreMap.projection.toScreenLocation(it)
+            location[0] = point.x.toInt()
+            location[1] = point.y.toInt()
+        }
+
+        // Salva il riferimento al popup corrente
+        currentPopupWindow = popupWindow
+
+        // Aggiungi animazione di fade in
+        popupView.alpha = 0f
+        popupView.animate().alpha(1f).setDuration(200).start()
+
+        // Mostra il popup
+        popupWindow.showAtLocation(
+            mapView,
+            Gravity.NO_GRAVITY,
+            location[0] - (popupView.measuredWidth / 2),  // Centra orizzontalmente
+            location[1] - 120 // Offset per mostrare il popup sopra il marker
+        )
+
+        // Aggiungi un listener per chiudere il popup quando si tocca fuori
+        popupWindow.setOnDismissListener {
+            currentPopupWindow = null
+        }
     }
 
     private fun requestPermissions() {
@@ -257,8 +688,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Nuova funzione per aggiornare tutti i marker
     private fun updateAllMarkers() {
+
         // Pulisci la mappa
         maplibreMap.clear()
+        markerCoordinatesMap.clear()
 
         // Ricrea il marker della posizione corrente (blu)
         val currentLocation = maplibreMap.cameraPosition.target
@@ -269,32 +702,74 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         )
 
         // Ricrea tutti i marker delle buche (punti neri)
-        bucheMarkers.forEach { position ->
-            createSmallBlackDot(position)
+        bucheMarkers.forEachIndexed { index, position ->
+            val marker = createSelectableBlackDot(position)
+            // Salva le coordinate associate al marker
+            markerCoordinatesMap[marker] = Pair(position.latitude, position.longitude)
         }
+
+        // Ricrea tutti i marker delle buche (punti neri)
+        //bucheMarkers.forEach { position ->
+        //    createSmallBlackDot(position)
+        //}
     }
 
-    // Aggiungi questa funzione per creare un piccolo marker nero
-    private fun createSmallBlackDot(position: LatLng) {
+    private fun createSelectableBlackDot(position: LatLng): Marker {
         // Crea un piccolo punto nero programmaticamente
         val size = 20 // dimensione in pixel
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val paint = Paint().apply {
+
+        // Crea due Paint objects - uno per il punto e uno per il bordo
+        val dotPaint = Paint().apply {
             color = Color.BLACK
             style = Paint.Style.FILL
+            isAntiAlias = true
         }
-        canvas.drawCircle(size/2f, size/2f, size/2f, paint)
+
+        val borderPaint = Paint().apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            isAntiAlias = true
+        }
+
+        // Disegna il punto nero con bordo bianco
+        canvas.drawCircle(size/2f, size/2f, (size/2f) - 2f, dotPaint)
+        canvas.drawCircle(size/2f, size/2f, (size/2f) - 2f, borderPaint)
 
         // Crea l'icona dal bitmap
         val icon = IconFactory.getInstance(this).fromBitmap(bitmap)
 
-        // Aggiungi il marker
-        maplibreMap.addMarker(
+        // Crea il marker con l'icona personalizzata
+        val marker = maplibreMap.addMarker(
             MarkerOptions()
                 .position(position)
                 .icon(icon)
+                .setTitle("Buca")  // Aggiungi un titolo al marker
+                .setSnippet("Lat: ${position.latitude}\nLong: ${position.longitude}")  // Aggiungi le coordinate come snippet
         )
+
+        // Aggiungi il marker alla mappa delle coordinate
+        markerCoordinatesMap[marker] = Pair(position.latitude, position.longitude)
+
+        // Imposta un click listener specifico per questo marker
+        maplibreMap.setOnMarkerClickListener { clickedMarker ->
+            if (clickedMarker == marker) {
+                // Mostra le informazioni del marker
+                showMarkerInfo(clickedMarker)
+                true // Consuma l'evento di click
+            } else {
+                false // Lascia che altri handler gestiscano l'evento
+            }
+        }
+
+        return marker
+    }
+
+    // Funzione helper per formattare le coordinate
+    private fun formatCoordinate(coordinate: Double): String {
+        return String.format("%.6f", coordinate)
     }
 
     // Nuova funzione per preparare e inviare l'email
