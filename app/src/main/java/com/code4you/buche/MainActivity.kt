@@ -16,13 +16,17 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
-import com.google.android.gms.maps.model.CircleOptions
+import com.google.android.gms.maps.model.Marker
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.maps.MapView
@@ -34,6 +38,8 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.Style
 import java.util.Date
 import java.util.Locale
+
+// Modifica l'import del Marker
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -51,6 +57,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val coordinateList = mutableListOf<Pair<Double, Double>>()
     // Aggiungi questa proprietà per tenere traccia dei marker delle buche
     private val bucheMarkers = mutableListOf<LatLng>()
+
+    private val markerCoordinatesMap = mutableMapOf<org.maplibre.android.annotations.Marker, Pair<Double, Double>>()
+    private var currentPopupWindow: PopupWindow? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +90,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(map: MapLibreMap) {
         maplibreMap = map
 
+        // Aggiungi il listener per i click sui marker
+        maplibreMap.setOnMarkerClickListener { marker ->
+            showMarkerInfo(marker)
+            true
+        }
+
         // Impostare i limiti di zoom
         maplibreMap.setMinZoomPreference(10.0) // zoom minimo consentito
         maplibreMap.setMaxZoomPreference(20.0) // zoom massimo consentito
@@ -100,6 +115,53 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Imposta una posizione iniziale (ad esempio, Roma)
         val initialPosition = LatLng(41.9028, 12.4964)
         maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(initialPosition, 10.0))
+    }
+
+    @SuppressLint("ServiceCast", "MissingInflatedId")
+    private fun showMarkerInfo(marker: org.maplibre.android.annotations.Marker) {
+        // Chiudi popup precedente se esiste
+        currentPopupWindow?.dismiss()
+
+        // Ottieni le coordinate associate al marker
+        val coordinates = markerCoordinatesMap[marker] ?: return
+
+        // Crea la view per il popup
+        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+        val popupView = inflater.inflate(R.layout.marker_info_popup, null)
+
+        // Trova la TextView nel layout e imposta il testo
+        val infoText = popupView.findViewById<TextView>(R.id.markerInfoText)
+        infoText.text = "Lat: ${coordinates.first}\nLong: ${coordinates.second}"
+
+        // Crea e configura il PopupWindow
+        val popupWindow = PopupWindow(
+            popupView,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = 10f
+            setBackgroundDrawable(resources.getDrawable(android.R.drawable.dialog_holo_light_frame))
+        }
+
+        // Mostra il popup sopra il marker
+        val location = IntArray(2)
+        marker.getPosition().let {
+            val point = maplibreMap.projection.toScreenLocation(it)
+            location[0] = point.x.toInt()
+            location[1] = point.y.toInt()
+        }
+
+        // Salva il riferimento al popup corrente
+        currentPopupWindow = popupWindow
+
+        // Mostra il popup
+        popupWindow.showAtLocation(
+            mapView,
+            Gravity.NO_GRAVITY,
+            location[0],
+            location[1] - 100 // Offset per mostrare il popup sopra il marker
+        )
     }
 
     private fun requestPermissions() {
@@ -257,8 +319,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     // Nuova funzione per aggiornare tutti i marker
     private fun updateAllMarkers() {
+
         // Pulisci la mappa
         maplibreMap.clear()
+        markerCoordinatesMap.clear()
 
         // Ricrea il marker della posizione corrente (blu)
         val currentLocation = maplibreMap.cameraPosition.target
@@ -269,9 +333,74 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         )
 
         // Ricrea tutti i marker delle buche (punti neri)
-        bucheMarkers.forEach { position ->
-            createSmallBlackDot(position)
+        bucheMarkers.forEachIndexed { index, position ->
+            val marker = createSelectableBlackDot(position)
+            // Salva le coordinate associate al marker
+            markerCoordinatesMap[marker] = Pair(position.latitude, position.longitude)
         }
+
+        // Ricrea tutti i marker delle buche (punti neri)
+        //bucheMarkers.forEach { position ->
+        //    createSmallBlackDot(position)
+        //}
+    }
+
+    private fun createSelectableBlackDot(position: LatLng): org.maplibre.android.annotations.Marker {
+        // Crea un piccolo punto nero programmaticamente
+        val size = 20 // dimensione in pixel
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Crea due Paint objects - uno per il punto e uno per il bordo
+        val dotPaint = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
+        val borderPaint = Paint().apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            isAntiAlias = true
+        }
+
+        // Disegna il punto nero con bordo bianco
+        canvas.drawCircle(size/2f, size/2f, (size/2f) - 2f, dotPaint)
+        canvas.drawCircle(size/2f, size/2f, (size/2f) - 2f, borderPaint)
+
+        // Crea l'icona dal bitmap
+        val icon = IconFactory.getInstance(this).fromBitmap(bitmap)
+
+        // Crea il marker con l'icona personalizzata
+        val marker = maplibreMap.addMarker(
+            MarkerOptions()
+                .position(position)
+                .icon(icon)
+                .setTitle("Buca")  // Aggiungi un titolo al marker
+                .setSnippet("Lat: ${position.latitude}\nLong: ${position.longitude}")  // Aggiungi le coordinate come snippet
+        )
+
+        // Aggiungi il marker alla mappa delle coordinate
+        markerCoordinatesMap[marker] = Pair(position.latitude, position.longitude)
+
+        // Imposta un click listener specifico per questo marker
+        maplibreMap.setOnMarkerClickListener { clickedMarker ->
+            if (clickedMarker == marker) {
+                // Mostra le informazioni del marker
+                showMarkerInfo(clickedMarker)
+                true // Consuma l'evento di click
+            } else {
+                false // Lascia che altri handler gestiscano l'evento
+            }
+        }
+
+        return marker
+    }
+
+    // Funzione helper per formattare le coordinate
+    private fun formatCoordinate(coordinate: Double): String {
+        return String.format("%.6f", coordinate)
     }
 
     // Aggiungi questa funzione per creare un piccolo marker nero
