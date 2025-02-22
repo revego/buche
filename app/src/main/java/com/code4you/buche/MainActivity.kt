@@ -2,13 +2,16 @@ package com.code4you.buche
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.drawable.GradientDrawable
 import android.location.Location
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -17,16 +20,16 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import com.bumptech.glide.Glide
 import com.google.android.gms.location.*
-import com.google.android.gms.maps.model.Marker
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.maps.MapView
@@ -36,6 +39,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.maps.Style
+import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -117,7 +121,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(initialPosition, 10.0))
     }
 
-    @SuppressLint("ServiceCast", "MissingInflatedId")
     private fun showMarkerInfo(marker: org.maplibre.android.annotations.Marker) {
         // Chiudi popup precedente se esiste
         currentPopupWindow?.dismiss()
@@ -125,13 +128,201 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         // Ottieni le coordinate associate al marker
         val coordinates = markerCoordinatesMap[marker] ?: return
 
+        // Crea il container principale
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Crea un ImageView per l'immagine di Street View
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                600,  // larghezza aumentata per una migliore visibilità
+                400   // altezza aumentata per una migliore visibilità
+            ).apply {
+                setMargins(0, 0, 0, 16)
+            }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        }
+
+        // Crea l'URL di Street View
+        val streetViewUrl = "https://maps.googleapis.com/maps/api/streetview?" +
+                "size=600x400&" +
+                "location=${coordinates.first},${coordinates.second}&" +
+                "key=YOUR_GOOGLE_API_KEY"  // Sostituisci con la tua API key
+
+        // Carica l'immagine usando Glide
+        Glide.with(this)
+            .load(streetViewUrl)
+            .placeholder(R.drawable.road_placeholder)
+            .error(R.drawable.road_placeholder)
+            .into(imageView)
+
+        // Crea la TextView per le coordinate
+        val infoText = TextView(this).apply {
+            text = "Coordinate:\nLat: ${formatCoordinate(coordinates.first)}\nLong: ${formatCoordinate(coordinates.second)}"
+            setTextColor(Color.BLACK)
+            textSize = 14f
+            setPadding(0, 8, 0, 8)
+        }
+
+        // Aggiungi un bottone per aprire Street View
+        val openStreetViewButton = Button(this).apply {
+            text = "Apri in Street View"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                val gmmIntentUri = Uri.parse("google.streetview:cbll=${coordinates.first},${coordinates.second}")
+                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+                mapIntent.setPackage("com.google.android.apps.maps")
+                try {
+                    startActivity(mapIntent)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context, "Google Maps non installato", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // Aggiungi le view al container
+        with(popupView) {
+            addView(imageView)
+            addView(infoText)
+            addView(openStreetViewButton)
+        }
+
+        // Styling del container
+        popupView.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            setStroke(2, Color.GRAY)
+            cornerRadius = 8f
+            // Aggiungi un'ombra
+            //elevation = 8f
+        }
+
+        // Crea e configura il PopupWindow
+        val popupWindow = PopupWindow(
+            popupView,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = 10f
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = 8f
+            })
+            // Permetti di chiudere il popup toccando fuori
+            isOutsideTouchable = true
+            isFocusable = true
+        }
+
+        // Calcola la posizione del popup
+        val location = IntArray(2)
+        marker.position.let {
+            val point = maplibreMap.projection.toScreenLocation(it)
+            location[0] = point.x.toInt()
+            location[1] = point.y.toInt()
+        }
+
+        // Salva il riferimento al popup corrente
+        currentPopupWindow = popupWindow
+
+        // Animazione fade in
+        popupView.alpha = 0f
+        popupView.animate().alpha(1f).setDuration(200).start()
+
+        // Mostra il popup
+        popupWindow.showAtLocation(
+            mapView,
+            Gravity.NO_GRAVITY,
+            location[0] - (600 / 2),  // Centra rispetto alla larghezza dell'immagine
+            location[1] - 550  // Posiziona sopra il marker con spazio extra per l'immagine
+        )
+
+        // Listener per la chiusura
+        popupWindow.setOnDismissListener {
+            currentPopupWindow = null
+        }
+    }
+
+    @SuppressLint("ServiceCast", "MissingInflatedId")
+    private fun showMarkerInfo1(marker: org.maplibre.android.annotations.Marker) {
+        // Chiudi popup precedente se esiste
+        currentPopupWindow?.dismiss()
+
+        // Ottieni le coordinate associate al marker
+        val coordinates = markerCoordinatesMap[marker] ?: return
+
+        // Crea il container principale
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.WHITE)
+        }
+
+        // Crea un ImageView per l'immagine placeholder
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                400,  // larghezza in pixel
+                300   // altezza in pixel
+            ).apply {
+                setMargins(0, 0, 0, 16)  // Margine sotto l'immagine
+            }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageResource(R.drawable.road_placeholder)  // Usa un'immagine placeholder dalla cartella res/drawable
+        }
+
+        // Crea la TextView per le coordinate
+        val infoText = TextView(this).apply {
+            text = "Coordinate:\nLat: ${formatCoordinate(coordinates.first)}\nLong: ${formatCoordinate(coordinates.second)}"
+            setTextColor(Color.BLACK)
+            textSize = 14f
+            setPadding(0, 8, 0, 8)
+        }
+
+        // Aggiungi un bottone per azioni aggiuntive (opzionale)
+        val actionButton = Button(this).apply {
+            text = "Dettagli Buca"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                // Qui puoi aggiungere azioni aggiuntive
+                Toast.makeText(context, "Buca segnalata il: ${getCurrentDateTime()}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Aggiungi le view al container
+        with(popupView) {
+            addView(imageView)
+            addView(infoText)
+            addView(actionButton)
+        }
+
+        // Styling del container
+        popupView.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            setStroke(2, Color.GRAY)
+            cornerRadius = 8f
+        }
+
+
+
         // Crea la view per il popup
-        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        val popupView = inflater.inflate(R.layout.marker_info_popup, null)
+        //val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+        //val popupView = inflater.inflate(R.layout.marker_info_popup, null)
 
         // Trova la TextView nel layout e imposta il testo
-        val infoText = popupView.findViewById<TextView>(R.id.markerInfoText)
-        infoText.text = "Lat: ${coordinates.first}\nLong: ${coordinates.second}"
+        //val infoText = popupView.findViewById<TextView>(R.id.markerInfoText)
+        //infoText.text = "Lat: ${coordinates.first}\nLong: ${coordinates.second}"
 
         // Crea e configura il PopupWindow
         val popupWindow = PopupWindow(
@@ -162,6 +353,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             location[0],
             location[1] - 100 // Offset per mostrare il popup sopra il marker
         )
+    }
+
+    // Helper function per ottenere la data e ora corrente
+    private fun getCurrentDateTime(): String {
+        val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+        return sdf.format(Date())
     }
 
     private fun requestPermissions() {
